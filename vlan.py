@@ -14,7 +14,7 @@
 #
 #
 # Modified for the course of Network Infrastructures at 2019/2020 at 
-# University of Liège to implement a VLAN Controller Policy
+# University of Liege to implement a VLAN Controller Policy
 
 
 from pox.core import core
