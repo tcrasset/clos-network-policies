@@ -40,6 +40,20 @@ class Tree_Controller(object):
     # Use this table to keep track of which ethernet address is on
     # which switch port (keys are MACs, values are ports).
     self.mac_to_port = {}
+  
+
+  def delete_flow(self, datapath):
+    ofproto = datapath.ofproto
+    parser = datapath.ofproto_parser
+
+    for dst in self.mac_to_port[datapath.id].keys():
+      match = parser.OFPMatch(eth_dst=dst)
+      mod = parser.OFPFlowMod(
+        datapath, command=ofproto.OFPFC_DELETE,
+        out_port=ofproto.ofp_packet_ANY, out_group=ofproto.OFPG_ANY,
+        priority=1, match=match
+      )
+
 
 
   def resend_packet (self, packet_in, out_port):
@@ -91,7 +105,7 @@ class Tree_Controller(object):
 
     else:
       # Flood the packet out everything but the input port
-      self.resend_packet(packet_in, of.OFPP_ALL)
+      self.resend_packet(packet_in, of.OFPP_FLOOD)
 
   def _handle_PacketIn (self, event):
     """
