@@ -32,9 +32,15 @@ class Tree_Controller(object):
     # Keep track of the connection to the switch so that we can
     # send it messages!
     self.connection = connection
+    self.switch_id = connection.dpid
     self.nCore = nCore
     self.nEdge = nEdge
     self.nHosts = nHosts
+
+    # Always disable core switch s2
+    print("Disabling core switch with address 00:00:00:00:00:02")
+    self.MACOfDisabledCoreSwitches = []
+    self.MACOfDisabledCoreSwitches.append("00:00:00:00:00:02")
 
     # This binds our PacketIn event listener
     connection.addListeners(self)
@@ -84,30 +90,42 @@ class Tree_Controller(object):
     source = str(packet.src)
     dest = str(packet.dst)
 
-    # Add to dictionnary
-    self.mac_to_port[source] = packet_in.in_port
-    
-    if dest in self.mac_to_port:
-      # Send packet out the associated port
-      out_port = self.mac_to_port[dest]
-      log.debug("Installing flow...")
-      log.debug("{} Port {} -> {} Port {} ".format(source, packet_in.in_port, dest, out_port))
+    # If packet is destined towards the port number of the disable core switch
+    # send a message to the controller to drop the packet
 
-      msg = of.ofp_flow_mod()
-
-      # Set fields to match received packet
-      msg.match = of.ofp_match.from_packet(packet)
-      #
-      #< Set other fields of flow_mod (timeouts? buffer_id?) >
-      msg.idle_timeout = 1
-      msg.hard_timeout = 10
-      msg.actions.append(of.ofp_action_output(port = out_port))
-      self.connection.send(msg)
-      self.resend_packet(packet_in, out_port)
-
+    if source in self.MACOfDisabledCoreSwitches:
+        log.debug("  S{} - Destination is S2: Rule is DROP".format(self.switch_id))
+        msg = of.ofp_flow_mod()
+        match = of.ofp_match()
+        match.dl_dst = packet.dst
+        # Very long timeouts
+        # Once we are able to detect changes in the topology, we should adapt the timeouts
+        msg.idle_timeout = 10000
+        msg.hard_timeout = 10000
+        msg.match = match
+        self.connection.send(msg)
     else:
-      # Flood the packet out everything but the input port
-      self.resend_packet(packet_in, of.OFPP_FLOOD)
+        self.mac_to_port[source] = packet_in.in_port
+        if dest in self.mac_to_port:
+            # Add to dictionnary
+            # Send packet out the associated port
+            out_port = self.mac_to_port[dest]
+
+            log.debug("  S{} - Installing flow: {} Port {} -> {} Port {}".format(self.switch_id, source, packet_in.in_port, dest, out_port))
+
+            # Set fields to match received packet
+            msg = of.ofp_flow_mod()
+            msg.match = of.ofp_match.from_packet(packet)
+            msg.idle_timeout = 100
+            msg.hard_timeout = 1000
+            msg.actions.append(of.ofp_action_output(port = out_port))
+            self.connection.send(msg)
+            self.resend_packet(packet_in, out_port)
+
+        else:
+            # Flood the packet out everything but the input port
+            log.debug("  S{} - Flooding packet from {} {}".format(self.switch_id, source, packet_in.in_port))
+            self.resend_packet(packet_in, of.OFPP_ALL)
 
   def _handle_PacketIn (self, event):
     """
