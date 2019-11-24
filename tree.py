@@ -93,7 +93,18 @@ class Tree_Controller(object):
     # If packet is destined towards the port number of the disable core switch
     # send a message to the controller to drop the packet
 
-    if source in self.MACOfDisabledCoreSwitches:
+    if (source in self.MACOfDisabledCoreSwitches):
+        log.debug("  S{} - Source is S2: Rule is DROP".format(self.switch_id))
+        msg = of.ofp_flow_mod()
+        match = of.ofp_match()
+        match.dl_src = packet.src
+        # Very long timeouts
+        # Once we are able to detect changes in the topology, we should adapt the timeouts
+        msg.idle_timeout = 10000
+        msg.hard_timeout = 10000
+        msg.match = match
+        self.connection.send(msg)
+    elif (dest in self.MACOfDisabledCoreSwitches):
         log.debug("  S{} - Destination is S2: Rule is DROP".format(self.switch_id))
         msg = of.ofp_flow_mod()
         match = of.ofp_match()
@@ -123,9 +134,10 @@ class Tree_Controller(object):
             self.resend_packet(packet_in, out_port)
 
         else:
+            print("{} - {} in dictionnary ? : {}".format( source, dest, source in self.mac_to_port))
             # Flood the packet out everything but the input port
             log.debug("  S{} - Flooding packet from {} {}".format(self.switch_id, source, packet_in.in_port))
-            self.resend_packet(packet_in, of.OFPP_ALL)
+            self.resend_packet(packet_in, of.OFPP_FLOOD)
 
   def _handle_PacketIn (self, event):
     """
