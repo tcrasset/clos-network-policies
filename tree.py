@@ -19,7 +19,6 @@
 
 from pox.core import core
 import pox.openflow.libopenflow_01 as of
-import clos-test/clostopo as clostopo
 
 log = core.getLogger()
 
@@ -29,11 +28,14 @@ class Tree_Controller(object):
   A Tree_Policy object is created for each switch that connects.
   A Connection object for that switch is passed to the __init__ function.
   """
-  def __init__ (self, connection):
+  def __init__ (self, connection, nCore, nEdge, nHosts):
     # Keep track of the connection to the switch so that we can
     # send it messages!
     self.connection = connection
-    self.topology = clostopo
+    self.nCore = nCore
+    self.nEdge = nEdge
+    self.nHosts = nHosts
+
     # This binds our PacketIn event listener
     connection.addListeners(self)
 
@@ -120,11 +122,15 @@ class Tree_Controller(object):
     packet_in = event.ofp
     self.act_like_switch(packet, packet_in)
 
-def launch ():
+def launch (nCore, nEdge, nHosts):
   """
   Starts the component
   """
+  print("Controller started with the following arguments:")
+  print("nCore={}, nEdge={}, nHosts ={}".format(nCore, nEdge, nHosts))
+
   def start_switch (event):
     log.debug("Controlling %s" % (event.connection,))
-    Tree_Controller(event.connection)
+    Tree_Controller(event.connection, int(nCore), int(nEdge), int(nHosts))
+
   core.openflow.addListenerByName("ConnectionUp", start_switch)
