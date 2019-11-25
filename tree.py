@@ -24,99 +24,92 @@ log = core.getLogger()
 
 
 class Tree_Controller(object):
-  """
-  A Tree_Policy object is created for each switch that connects.
-  A Connection object for that switch is passed to the __init__ function.
-  """
-  def __init__ (self, connection, nCore, nEdge, nHosts):
-    # Keep track of the connection to the switch so that we can
-    # send it messages!
-    self.connection = connection
-    self.switch_id = connection.dpid
-    self.nCore = nCore
-    self.nEdge = nEdge
-    self.nHosts = nHosts
-
-    # Always disable core switch s2
-    print("Disabling core switch with address 00:00:00:00:00:02")
-    self.MACOfDisabledCoreSwitches = []
-    self.MACOfDisabledCoreSwitches.append("00:00:00:00:00:02")
-
-    # This binds our PacketIn event listener
-    connection.addListeners(self)
-
-    # Use this table to keep track of which ethernet address is on
-    # which switch port (keys are MACs, values are ports).
-    self.mac_to_port = {}
-  
-
-  def delete_flow(self, datapath):
-    ofproto = datapath.ofproto
-    parser = datapath.ofproto_parser
-
-    for dst in self.mac_to_port[datapath.id].keys():
-      match = parser.OFPMatch(eth_dst=dst)
-      mod = parser.OFPFlowMod(
-        datapath, command=ofproto.OFPFC_DELETE,
-        out_port=ofproto.ofp_packet_ANY, out_group=ofproto.OFPG_ANY,
-        priority=1, match=match
-      )
-
-
-
-  def resend_packet (self, packet_in, out_port):
     """
-    Instructs the switch to resend a packet that it had sent to us.
-    "packet_in" is the ofp_packet_in object the switch had sent to the
-    controller due to a table-miss.
+    A Tree_Policy object is created for each switch that connects.
+    A Connection object for that switch is passed to the __init__ function.
     """
-    msg = of.ofp_packet_out()
-    msg.data = packet_in
+    def __init__ (self, connection, nCore, nEdge, nHosts):
+        # Keep track of the connection to the switch so that we can
+        # send it messages!
+        self.connection = connection
+        self.switch_id = connection.dpid
+        self.nCore = nCore
+        self.nEdge = nEdge
+        self.nHosts = nHosts
 
-    # Add an action to send to the specified port
-    action = of.ofp_action_output(port = out_port)
-    msg.actions.append(action)
+        self.coreSwitchIDs = []
+        self.edgeSwitchIDs = []
+        self.edgeToCoreLink = []
+        self.HostToEdgeLink = []
 
-    # Send message to switch
-    self.connection.send(msg)
+        self.recreate_topology()
 
+        if(self.switch_id in self.edgeSwitchIDs):
+            self.activate_core(1) # We want to keep core switch s1
 
-  def act_like_switch(self, packet, packet_in):
-    """
-    Implement switch-like behavior.
-    """
+        # This binds our PacketIn event listener
+        connection.addListeners(self)
 
-    # Learn the port for the source MAC
-    source = str(packet.src)
-    dest = str(packet.dst)
+        # Use this table to keep track of which ethernet address is on
+        # which switch port (keys are MACs, values are ports).
+        self.mac_to_port = {}
+    
+    def recreate_topology(self):
+        self.coreSwitchIDs = list(range(1,self.nCore+1))
+        self.edgeSwitchIDs = list(range(self.nCore + 1, self.nCore + 1 + self.nEdge))
+        self.edgeToCoreLink = [(e, c) for e in self.edgeSwitchIDs for c in self.coreSwitchIDs]
+        
+        hostNo=1
+        self.HostToEdgeLink = []
+        for e in self.edgeSwitchIDs:
+            for h in range(hostNo, hostNo + self.nHosts):
+                self.HostToEdgeLink.append((h,e))
+            hostNo += self.nHosts
+      
+    def activate_core(self, coreSwitchPort):
+        # Ports between edge and core switches in [1, nCore +1]
+        # Every core switch is connected to the same port on every edge switch
+        # E.g. core switch s1 will connect to port 1 on s3, s4 and s5.
 
-    # If packet is destined towards the port number of the disable core switch
-    # send a message to the controller to drop the packet
+        ports_to_block = [p for p in range(1, self.nCore+1) if p != coreSwitchPort]
+        for port in ports_to_block:
+            log.debug(" S{} deactivating port {}".format(self.switch_id, port))
+            msg = of.ofp_port_mod()
+            msg.port_no = self.connection.ports[port].port_no
+            msg.hw_addr = self.connection.ports[port].hw_addr
+            msg.mask = of.OFPPC_PORT_DOWN
+            msg.config = of.OFPPC_PORT_DOWN
+            self.connection.send(msg)
 
-    if (source in self.MACOfDisabledCoreSwitches):
-        log.debug("  S{} - Source is S2: Rule is DROP".format(self.switch_id))
-        msg = of.ofp_flow_mod()
-        match = of.ofp_match()
-        match.dl_src = packet.src
-        # Very long timeouts
-        # Once we are able to detect changes in the topology, we should adapt the timeouts
-        msg.idle_timeout = 10000
-        msg.hard_timeout = 10000
-        msg.match = match
+    def resend_packet (self, packet_in, out_port):
+        """
+        Instructs the switch to resend a packet that it had sent to us.
+        "packet_in" is the ofp_packet_in object the switch had sent to the
+        controller due to a table-miss.
+        """
+        msg = of.ofp_packet_out()
+        msg.data = packet_in
+
+        # Add an action to send to the specified port
+        action = of.ofp_action_output(port = out_port)
+        msg.actions.append(action)
+
+        # Send message to switch
         self.connection.send(msg)
-    elif (dest in self.MACOfDisabledCoreSwitches):
-        log.debug("  S{} - Destination is S2: Rule is DROP".format(self.switch_id))
-        msg = of.ofp_flow_mod()
-        match = of.ofp_match()
-        match.dl_dst = packet.dst
-        # Very long timeouts
-        # Once we are able to detect changes in the topology, we should adapt the timeouts
-        msg.idle_timeout = 10000
-        msg.hard_timeout = 10000
-        msg.match = match
-        self.connection.send(msg)
-    else:
+
+
+    def act_like_switch(self, packet, packet_in):
+        """
+        Implement switch-like behavior.
+        """
+
+        # Learn the port for the source MAC
+        source = str(packet.src)
+        dest = str(packet.dst)
+        print(packet)
+
         self.mac_to_port[source] = packet_in.in_port
+
         if dest in self.mac_to_port:
             # Add to dictionnary
             # Send packet out the associated port
@@ -126,7 +119,7 @@ class Tree_Controller(object):
 
             # Set fields to match received packet
             msg = of.ofp_flow_mod()
-            msg.match = of.ofp_match.from_packet(packet)
+            msg.match = of.ofp_match.from_packet(packet_in)
             msg.idle_timeout = 100
             msg.hard_timeout = 1000
             msg.actions.append(of.ofp_action_output(port = out_port))
@@ -134,33 +127,31 @@ class Tree_Controller(object):
             self.resend_packet(packet_in, out_port)
 
         else:
-            print("{} - {} in dictionnary ? : {}".format( source, dest, source in self.mac_to_port))
             # Flood the packet out everything but the input port
-            log.debug("  S{} - Flooding packet from {} {}".format(self.switch_id, source, packet_in.in_port))
+            log.debug("  S{} - Flooding packet from {} {} to {}".format(self.switch_id, source, packet_in.in_port, dest))
             self.resend_packet(packet_in, of.OFPP_FLOOD)
 
-  def _handle_PacketIn (self, event):
-    """
-    Handles packet in messages from the switch.
-    """
+    def _handle_PacketIn (self, event):
+        """
+        Handles packet in messages from the switch.
+        """
+        packet = event.parsed
+        if not packet.parsed:
+            log.warning("Ignoring incomplete packet")
+            return
 
-    packet = event.parsed
-    if not packet.parsed:
-      log.warning("Ignoring incomplete packet")
-      return
-
-    packet_in = event.ofp
-    self.act_like_switch(packet, packet_in)
+        packet_in = event.ofp
+        self.act_like_switch(packet, packet_in)
 
 def launch (nCore, nEdge, nHosts):
-  """
-  Starts the component
-  """
-  print("Controller started with the following arguments:")
-  print("nCore={}, nEdge={}, nHosts ={}".format(nCore, nEdge, nHosts))
+    """
+    Starts the component
+    """
+    print("Controller started with the following arguments:")
+    print("nCore={}, nEdge={}, nHosts ={}".format(nCore, nEdge, nHosts))
 
-  def start_switch (event):
-    log.debug("Controlling %s" % (event.connection,))
-    Tree_Controller(event.connection, int(nCore), int(nEdge), int(nHosts))
+    def start_switch (event):
+        log.debug("Controlling %s" % (event.connection,))
+        Tree_Controller(event.connection, int(nCore), int(nEdge), int(nHosts))
 
-  core.openflow.addListenerByName("ConnectionUp", start_switch)
+    core.openflow.addListenerByName("ConnectionUp", start_switch)
