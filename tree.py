@@ -45,7 +45,8 @@ class Tree_Controller(object):
         self.recreate_topology()
 
         if(self.switch_id in self.edgeSwitchIDs):
-            self.activate_core(1) # We want to keep core switch s1
+            # We want to keep core switch s1
+            self.activate_core(1)
 
         # This binds our PacketIn event listener
         connection.addListeners(self)
@@ -67,7 +68,7 @@ class Tree_Controller(object):
             hostNo += self.nHosts
       
     def activate_core(self, coreSwitchPort):
-        # Ports between edge and core switches in [1, nCore +1]
+        # Ports between edge and core switches in [1, nCore]
         # Every core switch is connected to the same port on every edge switch
         # E.g. core switch s1 will connect to port 1 on s3, s4 and s5.
 
@@ -77,8 +78,8 @@ class Tree_Controller(object):
             msg = of.ofp_port_mod()
             msg.port_no = self.connection.ports[port].port_no
             msg.hw_addr = self.connection.ports[port].hw_addr
-            msg.mask = of.OFPPC_PORT_DOWN
-            msg.config = of.OFPPC_PORT_DOWN
+            msg.mask = of.OFPPC_NO_FLOOD
+            msg.config = of.OFPPC_NO_FLOOD
             self.connection.send(msg)
 
     def resend_packet (self, packet_in, out_port):
