@@ -68,8 +68,8 @@ def closTest(duration, discovery_time):
     info('\n')
 
     info("*** Starting clients\n")
-    big = "/home/mininet/clos-test/client.py {} 2 {} 4 3"
-    small = "/home/mininet/clos-test/client.py {} 2 {} 1 0"
+    big = "/home/mininet/clos-network-policies/clos-test/client.py {} 2 {} 4 3"
+    small = "/home/mininet/clos-network-policies/clos-test/client.py {} 2 {} 1 0"
     h1.sendCmd(big.format("10.0.0.5", duration))
     h2.sendCmd(big.format("10.0.0.10", duration))
     h3.sendCmd(small.format("10.0.0.7", duration))
