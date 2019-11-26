@@ -20,6 +20,3 @@ class Tenants(object):
             vlan_id = random.randint(0, n_vlans)
             self.addToVLAN(address, vlan_id)
             return vlan_id
-
-        
-
