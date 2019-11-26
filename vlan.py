@@ -69,6 +69,12 @@ class VLAN_Controller(object):
             hostNo += self.nHosts
 
 
+    def is_core(self):
+        if self.switch_id in self.coreSwitchIDs:
+            return True
+        return False
+
+
     def resend_packet (self, packet_in, out_port):
         """
         Instructs the switch to resend a packet that it had sent to us.
@@ -115,7 +121,7 @@ class VLAN_Controller(object):
             self.resend_packet(packet_in, out_port)
 
         else:
-            if self.is_core():
+            if self.is_core() or (not self.is_core() and self.send_from_core()):
                 # Flood the packet out everything but the input port
                 log.debug("  S{} - Flooding packet from {} {} to {}".format(self.switch_id, source, packet_in.in_port, dest))
                 self.resend_packet(packet_in, of.OFPP_FLOOD)
