@@ -14,18 +14,20 @@
 #
 #
 # Modified for the course of Network Infrastructures at 2019/2020 at 
-# University of Liege to implement a VLAN Controller Policy
+# University of Liege to implement a Adaptive Routing Controller Policy
 
 
 from pox.core import core
 import pox.openflow.libopenflow_01 as of
 
 from tenants import Tenants
+from timer import Timer
+from threading import Event
 
 
 log = core.getLogger()
 
-class VLAN_Controller(object):
+class Adaptive_Controller(object):
     """
     A VLAN_Policy object is created for each switch that connects.
     A Connection object for that switch is passed to the __init__ function.
@@ -45,9 +47,6 @@ class VLAN_Controller(object):
         self.HostToEdgeLink = []
 
         self.recreate_topology()
-
-        self.tenants = Tenants(n_vlans=nCore)
-        self.vlan_id = 1
 
         # This binds our PacketIn event listener
         connection.addListeners(self)
@@ -74,6 +73,7 @@ class VLAN_Controller(object):
         if self.switch_id in self.coreSwitchIDs:
             return True
         return False
+
 
     def sent_from_core(self, port):
         return port in self.coreSwitchIDs
@@ -140,15 +140,9 @@ class VLAN_Controller(object):
             
             # Switch is an edge switch and gets a packet from a host
             else:
-                out_port_to_tenant = self.tenants.getVLAN(packet.src)
-                # If host has no tenant yet, assign him a tenant
-                if out_port_to_tenant == -1:
-                    self.tenants.addToVLAN(packet.src, out_port=self.vlan_id)
-                    out_port_to_tenant = self.vlan_id
-                    self.vlan_id = (self.vlan_id) % self.tenants.n_vlans + 1
-                # Forward the packet from host to core switch on port out_port_to_tenant
-                log.debug("  S{} - Forwarding packet from {} {} out to port {}".format(self.switch_id, source, packet_in.in_port, out_port_to_tenant))
-                self.resend_packet(packet_in, out_port=out_port_to_tenant)
+                out_port_to_core = 0
+                log.debug("  S{} - Forwarding packet from {} {} out to port {}".format(self.switch_id, source, packet_in.in_port, out_port_to_core))
+                self.resend_packet(packet_in, out_port=out_port_to_core)
 
             print(self.tenants.vlans)
 
@@ -165,6 +159,13 @@ class VLAN_Controller(object):
         self.act_like_switch(packet, packet_in)
     
 
+    def _sendPortStatsRequests(self):
+        self.connection.send(of.ofp_stats_request(body=of.ofp_port_stats_request()))
+        log.debug("Sent one port stats request")
+
+def _handle_portstats_request   (self, event):
+    log.debug("PortStatsReceived from {}: {}".format(event.connection.dpid, event.stats))
+
 def launch (nCore, nEdge, nHosts):
     """
     Starts the component
@@ -177,3 +178,9 @@ def launch (nCore, nEdge, nHosts):
         VLAN_Controller(event.connection, int(nCore), int(nEdge), int(nHosts))
 
     core.openflow.addListenerByName("ConnectionUp", start_switch)
+    core.openflow.addListenerByName("PortStatsRequest",_handle_portstats_request) 
+
+    # timer set to execute every five seconds
+    stopFlag = Event()
+    timer = Timer(stopFlag, function=_sendPortStatsRequests, interval=0.5)
+    timer.start()
