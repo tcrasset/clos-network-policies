@@ -46,7 +46,8 @@ class VLAN_Controller(object):
 
         self.recreate_topology()
 
-        self.tenants = Tenants()
+        self.tenants = Tenants(n_vlans=nCore)
+        self.vlan_id = 1
 
         # This binds our PacketIn event listener
         connection.addListeners(self)
@@ -73,6 +74,10 @@ class VLAN_Controller(object):
         if self.switch_id in self.coreSwitchIDs:
             return True
         return False
+
+
+    def sent_from_core(self, port : int):
+        return port in self.coreSwitchIDs
 
 
     def resend_packet (self, packet_in, out_port):
@@ -121,15 +126,22 @@ class VLAN_Controller(object):
             self.resend_packet(packet_in, out_port)
 
         else:
-            if self.is_core() or (not self.is_core() and self.send_from_core()):
-                # Flood the packet out everything but the input port
+            tenant = self.tenants.getVLAN(packet.src)
+            if tenant == -1:
+                self.tenants.addToVLAN(packet.src, self.vlan_id)
+                tenant = self.vlan_id
+                self.vlan_id = (self.vlan_id + 1) % self.nCore
+
+            if self.is_core() or (not self.is_core() and self.sent_from_core(packet_in.in_port)):
+                # Flood the packet out everything but the core switch ports
                 log.debug("  S{} - Flooding packet from {} {} to {}".format(self.switch_id, source, packet_in.in_port, dest))
-                self.resend_packet(packet_in, of.OFPP_FLOOD)
+                for port in range(1, self.nCore + self.nHosts + 1) not in self.coreSwitchIDs:
+                    self.resend_packet(packet_in, out_port=port)
             else:
                 # Give the packet the tenant associated with the source address
                 log.debug("  S{} - Giving packet from {} {} to {}".format(self.switch_id, source, packet_in.in_port, dest))
                 # A given VLAN is reached through the port corresponding to the VLAN id
-                self.resend_packet(packet_in, out_port=tenants.getVLAN(source))
+                self.resend_packet(packet_in, out_port=self.tenants.getVLAN(packet.src))
 
     def _handle_PacketIn (self, event):
         """
@@ -142,6 +154,7 @@ class VLAN_Controller(object):
 
         packet_in = event.ofp
         self.act_like_switch(packet, packet_in)
+    
 
 def launch (nCore, nEdge, nHosts):
     """
@@ -152,6 +165,6 @@ def launch (nCore, nEdge, nHosts):
 
     def start_switch (event):
         log.debug("Controlling %s" % (event.connection,))
-        Tree_Controller(event.connection, int(nCore), int(nEdge), int(nHosts))
+        VLAN_Controller(event.connection, int(nCore), int(nEdge), int(nHosts))
 
     core.openflow.addListenerByName("ConnectionUp", start_switch)
