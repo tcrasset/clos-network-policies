@@ -75,8 +75,14 @@ class VLAN_Controller(object):
             return True
         return False
 
+    def is_edge(self):
+        if self.switch_id in self.edgeSwitchIDs:
+            return True
+        return False
 
-    def sent_from_core(self, port : int):
+
+
+    def sent_from_core(self, port):
         return port in self.coreSwitchIDs
 
 
@@ -126,22 +132,32 @@ class VLAN_Controller(object):
             self.resend_packet(packet_in, out_port)
 
         else:
-            tenant = self.tenants.getVLAN(packet.src)
-            if tenant == -1:
-                self.tenants.addToVLAN(packet.src, self.vlan_id)
-                tenant = self.vlan_id
-                self.vlan_id = (self.vlan_id + 1) % self.nCore
-
-            if self.is_core() or (not self.is_core() and self.sent_from_core(packet_in.in_port)):
-                # Flood the packet out everything but the core switch ports
-                log.debug("  S{} - Flooding packet from {} {} to {}".format(self.switch_id, source, packet_in.in_port, dest))
-                for port in range(1, self.nCore + self.nHosts + 1) not in self.coreSwitchIDs:
-                    self.resend_packet(packet_in, out_port=port)
+            if self.is_core():
+                # Flood the packet out to the edge switch ports
+                log.debug("  S{} - Flooding packet from {} {} to edge switch ports".format(self.switch_id, source, packet_in.in_port))
+                self.resend_packet(packet_in, of.OFPP_FLOOD)
+            
+            # Switch is an edge switch and gets a packet from a core
+            elif self.sent_from_core(packet_in.in_port):
+                # Flood the packet out to the hosts
+                ports = [port for port in range(1, self.nCore + self.nHosts + 1) if port not in self.coreSwitchIDs]
+                log.debug("  S{} - Flooding packet from {} {} to host ports :{}".format(self.switch_id, source, packet_in.in_port, ports))
+                for p in ports:
+                    self.resend_packet(packet_in, out_port=p)
+            
+            # Switch is an edge switch and gets a packet from a host
             else:
-                # Give the packet the tenant associated with the source address
-                log.debug("  S{} - Giving packet from {} {} to {}".format(self.switch_id, source, packet_in.in_port, dest))
-                # A given VLAN is reached through the port corresponding to the VLAN id
-                self.resend_packet(packet_in, out_port=self.tenants.getVLAN(packet.src))
+                out_port_to_tenant = self.tenants.getVLAN(packet.src)
+                # If host has no tenant yet, assign him a tenant
+                if out_port_to_tenant == -1:
+                    self.tenants.addToVLAN(packet.src, out_port=self.vlan_id)
+                    out_port_to_tenant = self.vlan_id
+                    self.vlan_id = (self.vlan_id) % self.tenants.n_vlans + 1
+                # Forward the packet from host to core switch on port out_port_to_tenant
+                log.debug("  S{} - Forwarding packet from {} {} out to port {}".format(self.switch_id, source, packet_in.in_port, out_port_to_tenant))
+                self.resend_packet(packet_in, out_port=out_port_to_tenant)
+
+            print(self.tenants.vlans)
 
     def _handle_PacketIn (self, event):
         """
