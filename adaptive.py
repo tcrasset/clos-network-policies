@@ -53,7 +53,7 @@ class Adaptive_Controller(object):
         self.time_interval = 2
         self.current_port_throughput = {}
         core.openflow.addListenerByName("PortStatsReceived",self._handle_portstats_received)
-        Timer(timeToWake=1, callback= self._sendPortStatsRequests, recurring=False)
+        Timer(timeToWake=self.time_interval, callback= self._sendPortStatsRequests, recurring=True)
 
     def is_core(self):
         if self.switch_id in self.coreSwitchIDs:
@@ -189,7 +189,7 @@ class Adaptive_Controller(object):
 
 
     def _handle_portstats_received(self, event):
-        log.debug(" S{} - PortStatsReceived from switch S{}".format(self.switch_id, event.connection.dpid))
+        print(" S{} - PortStatsReceived from switch S{}".format(self.switch_id, event.connection.dpid))
         for stat in flow_stats_to_list(event.stats):
             current_bytes = stat['tx_bytes']
             key = (event.dpid, stat['port_no'])
