@@ -31,6 +31,9 @@ class Tree_Controller(object):
     A Connection object for that switch is passed to the __init__ function.
     Is supposed to be used with a Clos Topology.
 
+    In this controller, the switch is designed to behave in a topology forming
+    a Spanning Tree. That is, there will be only one root, i.e. one core switch.
+
     Arguments
     ----------
     switch_id : int

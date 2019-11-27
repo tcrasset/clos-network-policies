@@ -31,8 +31,21 @@ class Adaptive_Controller(object):
     A Connection object for that switch is passed to the __init__ function.
     """
     def __init__ (self, connection, nCore, nEdge, nHosts):
-        # Keep track of the connection to the switch so that we can
-        # send it messages!
+        """
+        Initializes the Adaptive_Controller object.
+
+        Parameters
+        ----------
+        connection : pox.lib.revent.connection
+            Connection from the controller to the switch 
+
+        nCore : int
+            Number of core switches in the Clos Topology 
+        nEdge : int
+            Number of edge switches in the Clos Topology 
+        nHosts : int
+            Number of hosts per edge switch in the Clos Topology 
+        """
         self.connection = connection
         self.switch_id = connection.dpid
         self.nCore = nCore
@@ -69,8 +82,17 @@ class Adaptive_Controller(object):
     def resend_packet (self, packet_in, out_port):
         """
         Instructs the switch to resend a packet that it had sent to us.
-        "packet_in" is the ofp_packet_in object the switch had sent to the
-        controller due to a table-miss.
+
+        Parameters
+        ----------
+        packet_in : ofp_packet_in object
+            Packet which the switch had sent to the controller due to a table-miss
+        out_port : int
+            Port to send the packet out of
+
+        Returns
+        -------
+        None
         """
         msg = of.ofp_packet_out()
         msg.data = packet_in
@@ -82,12 +104,28 @@ class Adaptive_Controller(object):
         # Send message to switch
         self.connection.send(msg)
 
+        return
+
 
     def act_like_switch(self, packet, packet_in):
         """
-        Implement switch-like behavior.
-        """
+        Implement switch like behavior.
 
+        Sends a packet out to a port depending on specific conditions and
+        installs rules in the flow table of the corresponding switch
+        via OpenFlow messages.
+
+        Parameters
+        ----------
+        packet : pox.lib.packet
+            Packet that the switch sent up to the controller
+        packet_in : ofp_packet_in object
+            OpenFlow message
+
+        Returns
+        -------
+        None
+        """
         # Learn the port for the source MAC
         source = str(packet.src)
         dest = str(packet.dst)
@@ -140,6 +178,15 @@ class Adaptive_Controller(object):
     def _handle_PacketIn (self, event):
         """
         Handles packet in messages from the switch.
+
+        Parameters
+        ----------
+        event : pox.lib.revent
+            Event that the controller handles from the connected switch
+
+        Returns
+        -------
+        None
         """
         packet = event.parsed
         if not packet.parsed:
@@ -185,11 +232,13 @@ class Adaptive_Controller(object):
     def _sendPortStatsRequests(self):
         self.connection.send(of.ofp_stats_request(body=of.ofp_port_stats_request()))
         log.debug(" S{} - Sent one port stats request".format(self.switch_id))
+
+        return
     
 
 
     def _handle_portstats_received(self, event):
-        print(" S{} - PortStatsReceived from switch S{}".format(self.switch_id, event.connection.dpid))
+        log.debug(" S{} - PortStatsReceived from switch S{}".format(self.switch_id, event.connection.dpid))
         for stat in flow_stats_to_list(event.stats):
             current_bytes = stat['tx_bytes']
             key = (event.dpid, stat['port_no'])
@@ -198,14 +247,29 @@ class Adaptive_Controller(object):
                 self.current_port_throughput[key] = throughput
             else: 
                 self.current_port_throughput[key] = current_bytes
+        return
 
 
 def launch (nCore, nEdge, nHosts):
     """
-    Starts the component
+    Starts the component when calling from the command line.
+
+    Parameters
+    ----------
+    nCore : int
+        Number of core switches in the Clos Topology
+    nEdge : int
+        Number of edge switches in the Clos Topology
+    nHosts : int
+        Number of hosts per edge switch in the Clos Topology
+
+    Returns
+    -------
+    None    
     """
-    print("Controller started with the following arguments:")
-    print("nCore={}, nEdge={}, nHosts ={}".format(nCore, nEdge, nHosts))
+
+    log.debug("Controller started with the following arguments:")
+    log.debug("nCore={}, nEdge={}, nHosts ={}".format(nCore, nEdge, nHosts))
 
     controller = None
 
