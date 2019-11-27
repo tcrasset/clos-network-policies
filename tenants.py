@@ -13,5 +13,4 @@ class Tenants(object):
         if(address in self.vlans):
             return self.vlans[address]
         else:
-            print("Host {} does not belong to any VLAN".format(address))
             return -1

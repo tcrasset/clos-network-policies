@@ -37,12 +37,8 @@ class Tree_Controller(object):
         self.nEdge = nEdge
         self.nHosts = nHosts
 
-        self.coreSwitchIDs = []
-        self.edgeSwitchIDs = []
-        self.edgeToCoreLink = []
-        self.HostToEdgeLink = []
-
-        self.recreate_topology()
+        self.coreSwitchIDs = list(range(1,self.nCore+1))
+        self.edgeSwitchIDs = list(range(self.nCore + 1, self.nCore + 1 + self.nEdge))
 
         if(self.switch_id in self.edgeSwitchIDs):
             # We want to keep core switch s1
@@ -55,18 +51,6 @@ class Tree_Controller(object):
         # which switch port (keys are MACs, values are ports).
         self.mac_to_port = {}
     
-    def recreate_topology(self):
-        self.coreSwitchIDs = list(range(1,self.nCore+1))
-        self.edgeSwitchIDs = list(range(self.nCore + 1, self.nCore + 1 + self.nEdge))
-        self.edgeToCoreLink = [(e, c) for e in self.edgeSwitchIDs for c in self.coreSwitchIDs]
-        
-        hostNo=1
-        self.HostToEdgeLink = []
-        for e in self.edgeSwitchIDs:
-            for h in range(hostNo, hostNo + self.nHosts):
-                self.HostToEdgeLink.append((h,e))
-            hostNo += self.nHosts
-      
     def activate_core(self, coreSwitchPort):
         # Ports between edge and core switches in [1, nCore]
         # Every core switch is connected to the same port on every edge switch
@@ -107,7 +91,6 @@ class Tree_Controller(object):
         # Learn the port for the source MAC
         source = str(packet.src)
         dest = str(packet.dst)
-        print(packet)
 
         self.mac_to_port[source] = packet_in.in_port
 

@@ -39,12 +39,8 @@ class VLAN_Controller(object):
         self.nEdge = nEdge
         self.nHosts = nHosts
 
-        self.coreSwitchIDs = []
-        self.edgeSwitchIDs = []
-        self.edgeToCoreLink = []
-        self.HostToEdgeLink = []
-
-        self.recreate_topology()
+        self.coreSwitchIDs = list(range(1,self.nCore+1))
+        self.edgeSwitchIDs = list(range(self.nCore + 1, self.nCore + 1 + self.nEdge))
 
         self.tenants = Tenants(n_vlans=nCore)
         self.vlan_id = 1
@@ -55,19 +51,6 @@ class VLAN_Controller(object):
         # Use this table to keep track of which ethernet address is on
         # which switch port (keys are MACs, values are ports).
         self.mac_to_port = {}
-    
-
-    def recreate_topology(self):
-        self.coreSwitchIDs = list(range(1,self.nCore+1))
-        self.edgeSwitchIDs = list(range(self.nCore + 1, self.nCore + 1 + self.nEdge))
-        self.edgeToCoreLink = [(e, c) for e in self.edgeSwitchIDs for c in self.coreSwitchIDs]
-        
-        hostNo=1
-        self.HostToEdgeLink = []
-        for e in self.edgeSwitchIDs:
-            for h in range(hostNo, hostNo + self.nHosts):
-                self.HostToEdgeLink.append((h,e))
-            hostNo += self.nHosts
 
 
     def is_core(self):
@@ -104,7 +87,7 @@ class VLAN_Controller(object):
         # Learn the port for the source MAC
         source = str(packet.src)
         dest = str(packet.dst)
-        print(packet)
+        log.debug(" S{} - {}".format(self.switch_id, packet))
 
         self.mac_to_port[source] = packet_in.in_port
 
@@ -149,8 +132,6 @@ class VLAN_Controller(object):
                 # Forward the packet from host to core switch on port out_port_to_tenant
                 log.debug("  S{} - Forwarding packet from {} {} out to port {}".format(self.switch_id, source, packet_in.in_port, out_port_to_tenant))
                 self.resend_packet(packet_in, out_port=out_port_to_tenant)
-
-            print(self.tenants.vlans)
 
     def _handle_PacketIn (self, event):
         """

@@ -39,16 +39,13 @@ class Adaptive_Controller(object):
         self.nEdge = nEdge
         self.nHosts = nHosts
 
+        self.coreSwitchIDs = list(range(1,self.nCore+1))
+        self.edgeSwitchIDs = list(range(self.nCore + 1, self.nCore + 1 + self.nEdge))
+
+
         # Use this table to keep track of which ethernet address is on
         # which switch port (keys are MACs, values are ports).
         self.mac_to_port = {}
-
-        self.coreSwitchIDs = []
-        self.edgeSwitchIDs = []
-        self.edgeToCoreLink = []
-        self.HostToEdgeLink = []
-
-        self.recreate_topology()
 
         # This binds our PacketIn event listener
         connection.addListeners(self)
@@ -58,26 +55,10 @@ class Adaptive_Controller(object):
         core.openflow.addListenerByName("PortStatsReceived",self._handle_portstats_received)
         Timer(timeToWake=1, callback= self._sendPortStatsRequests, recurring=False)
 
-    
-
-    def recreate_topology(self):
-        self.coreSwitchIDs = list(range(1,self.nCore+1))
-        self.edgeSwitchIDs = list(range(self.nCore + 1, self.nCore + 1 + self.nEdge))
-        self.edgeToCoreLink = [(e, c) for e in self.edgeSwitchIDs for c in self.coreSwitchIDs]
-        
-        hostNo=1
-        self.HostToEdgeLink = []
-        for e in self.edgeSwitchIDs:
-            for h in range(hostNo, hostNo + self.nHosts):
-                self.HostToEdgeLink.append((h,e))
-            hostNo += self.nHosts
-
-
     def is_core(self):
         if self.switch_id in self.coreSwitchIDs:
             return True
         return False
-
 
     def sent_from_core(self, port):
         return port in self.coreSwitchIDs
@@ -123,7 +104,7 @@ class Adaptive_Controller(object):
                 log.debug("  S{} - Flooding packet from {} {} to edge switch ports".format(self.switch_id, source, packet_in.in_port))
 
         
-        # Switch is an edge switch and gets a packet from a core
+        # Switch is an edge switch and gets a packet from a core switch
         elif self.sent_from_core(packet_in.in_port):
             # Add port to dictionnary and entry to flow table if it is present
             if dest in self.mac_to_port:
@@ -174,7 +155,6 @@ class Adaptive_Controller(object):
         Returns:
         out_port
         """
-        
 
         # Add to dictionnary
         # Send packet out the associated port
@@ -183,7 +163,7 @@ class Adaptive_Controller(object):
         else:
             out_port = specific_out_port
 
-        log.debug("  S{} - Installing flow: {} Port {} -> {} Port {}".format(self.switch_id, source, 
+        log.debug(" S{} - Installing flow: {} Port {} -> {} Port {}".format(self.switch_id, source, 
                     packet_in.in_port, destination, out_port))
 
         # Set fields to match received packet, removing information we don't want to keep
@@ -204,12 +184,12 @@ class Adaptive_Controller(object):
 
     def _sendPortStatsRequests(self):
         self.connection.send(of.ofp_stats_request(body=of.ofp_port_stats_request()))
-        # log.debug(" S{} - Sent one port stats request".format(self.switch_id))
+        log.debug(" S{} - Sent one port stats request".format(self.switch_id))
     
 
 
     def _handle_portstats_received(self, event):
-        # log.debug(" S{} - PortStatsReceived from {}".format(self.switch_id, event.connection.dpid))
+        log.debug(" S{} - PortStatsReceived from switch S{}".format(self.switch_id, event.connection.dpid))
         for stat in flow_stats_to_list(event.stats):
             current_bytes = stat['tx_bytes']
             key = (event.dpid, stat['port_no'])
@@ -218,10 +198,6 @@ class Adaptive_Controller(object):
                 self.current_port_throughput[key] = throughput
             else: 
                 self.current_port_throughput[key] = current_bytes
-        # if(self.switch_id == 1):
-            # print("At S{} from {} - {}".format(self.switch_id, event.dpid, self.current_port_throughput))
-        
-    
 
 
 def launch (nCore, nEdge, nHosts):
