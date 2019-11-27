@@ -18,11 +18,9 @@
 
 
 from pox.core import core
+from pox.lib.recoco import Timer
 import pox.openflow.libopenflow_01 as of
-
-from tenants import Tenants
-from timer import Timer
-from threading import Event
+from pox.openflow.of_json import flow_stats_to_list
 
 
 log = core.getLogger()
@@ -41,6 +39,10 @@ class Adaptive_Controller(object):
         self.nEdge = nEdge
         self.nHosts = nHosts
 
+        # Use this table to keep track of which ethernet address is on
+        # which switch port (keys are MACs, values are ports).
+        self.mac_to_port = {}
+
         self.coreSwitchIDs = []
         self.edgeSwitchIDs = []
         self.edgeToCoreLink = []
@@ -51,9 +53,11 @@ class Adaptive_Controller(object):
         # This binds our PacketIn event listener
         connection.addListeners(self)
 
-        # Use this table to keep track of which ethernet address is on
-        # which switch port (keys are MACs, values are ports).
-        self.mac_to_port = {}
+        self.time_interval = 2
+        self.current_port_throughput = {}
+        core.openflow.addListenerByName("PortStatsReceived",self._handle_portstats_received)
+        Timer(timeToWake=1, callback= self._sendPortStatsRequests, recurring=False)
+
     
 
     def recreate_topology(self):
@@ -78,6 +82,8 @@ class Adaptive_Controller(object):
     def sent_from_core(self, port):
         return port in self.coreSwitchIDs
 
+    def get_throughput_at_port(self, port):
+        return self.current_port_throughput[(self.switch_id, port)]
 
     def resend_packet (self, packet_in, out_port):
         """
@@ -104,47 +110,51 @@ class Adaptive_Controller(object):
         # Learn the port for the source MAC
         source = str(packet.src)
         dest = str(packet.dst)
-        print(packet)
 
-        self.mac_to_port[source] = packet_in.in_port
-
-        if dest in self.mac_to_port:
-            # Add to dictionnary
-            # Send packet out the associated port
-            out_port = self.mac_to_port[dest]
-
-            log.debug("  S{} - Installing flow: {} Port {} -> {} Port {}".format(self.switch_id, source, packet_in.in_port, dest, out_port))
-
-            # Set fields to match received packet
-            msg = of.ofp_flow_mod()
-            msg.match = of.ofp_match.from_packet(packet_in)
-            msg.idle_timeout = 100
-            msg.hard_timeout = 1000
-            msg.actions.append(of.ofp_action_output(port = out_port))
-            self.connection.send(msg)
-            self.resend_packet(packet_in, out_port)
-
-        else:
-            if self.is_core():
+        if self.is_core():
+            self.mac_to_port[source] = packet_in.in_port
+            # Add port to dictionnary and entry to flow table if it is present
+            if dest in self.mac_to_port:
+                out_port = self._install_flow(source, dest, packet_in)
+                self.resend_packet(packet_in, out_port)
+            else:
                 # Flood the packet out to the edge switch ports
-                log.debug("  S{} - Flooding packet from {} {} to edge switch ports".format(self.switch_id, source, packet_in.in_port))
                 self.resend_packet(packet_in, of.OFPP_FLOOD)
-            
-            # Switch is an edge switch and gets a packet from a core
-            elif self.sent_from_core(packet_in.in_port):
-                # Flood the packet out to the hosts
+                log.debug("  S{} - Flooding packet from {} {} to edge switch ports".format(self.switch_id, source, packet_in.in_port))
+
+        
+        # Switch is an edge switch and gets a packet from a core
+        elif self.sent_from_core(packet_in.in_port):
+            # Add port to dictionnary and entry to flow table if it is present
+            if dest in self.mac_to_port:
+                out_port = self._install_flow(source, dest, packet_in)
+                self.resend_packet(packet_in, out_port)
+
+            else:
+                # Flood the packet out to the hosts only
                 ports = [port for port in range(1, self.nCore + self.nHosts + 1) if port not in self.coreSwitchIDs]
-                log.debug("  S{} - Flooding packet from {} {} to host ports :{}".format(self.switch_id, source, packet_in.in_port, ports))
                 for p in ports:
                     self.resend_packet(packet_in, out_port=p)
-            
-            # Switch is an edge switch and gets a packet from a host
-            else:
-                out_port_to_core = 0
-                log.debug("  S{} - Forwarding packet from {} {} out to port {}".format(self.switch_id, source, packet_in.in_port, out_port_to_core))
-                self.resend_packet(packet_in, out_port=out_port_to_core)
+                log.debug("  S{} - Flooding packet from {} {} to host ports :{}".format(self.switch_id, source, packet_in.in_port, ports))
 
-            print(self.tenants.vlans)
+        # Switch is an edge switch and gets a packet from a host
+        else:
+
+            # Add host address to port mapping to the dictionnary
+            self.mac_to_port[source] = packet_in.in_port
+
+            # Select optimal output port (adaptive routing)
+            min_throughput = float("inf")
+            for port in self.coreSwitchIDs:
+                throughput = self.get_throughput_at_port(port)
+                if(throughput < min_throughput):
+                    min_throughput = throughput
+                    out_port_to_core = port
+            self._install_flow(source, dest, packet_in, specific_out_port = out_port_to_core)
+            self.resend_packet(packet_in, out_port=out_port_to_core)
+            log.debug("  S{} - Forwarding packet from {} {} out to port {}".format(self.switch_id, source, packet_in.in_port, out_port_to_core))
+        return
+
 
     def _handle_PacketIn (self, event):
         """
@@ -157,14 +167,62 @@ class Adaptive_Controller(object):
 
         packet_in = event.ofp
         self.act_like_switch(packet, packet_in)
+
+    def _install_flow(self, source,  destination, packet_in, specific_out_port = None):
+        """Installs a flow in a switch table
+        
+        Returns:
+        out_port
+        """
+        
+
+        # Add to dictionnary
+        # Send packet out the associated port
+        if specific_out_port == None:
+            out_port = self.mac_to_port[destination]
+        else:
+            out_port = specific_out_port
+
+        log.debug("  S{} - Installing flow: {} Port {} -> {} Port {}".format(self.switch_id, source, 
+                    packet_in.in_port, destination, out_port))
+
+        # Set fields to match received packet, removing information we don't want to keep
+        msg = of.ofp_flow_mod()
+        msg.match = of.ofp_match.from_packet(packet_in)
+        msg.match.in_port = None	
+        msg.match.dl_vlan = None
+        msg.match.dl_vlan_pcp = None
+        msg.match.nw_tos = None
+        msg.idle_timeout = 100
+        msg.hard_timeout = 1000
+        msg.actions.append(of.ofp_action_output(port = out_port))
+        self.connection.send(msg)
+
+        return out_port
+
     
 
     def _sendPortStatsRequests(self):
         self.connection.send(of.ofp_stats_request(body=of.ofp_port_stats_request()))
-        log.debug("Sent one port stats request")
+        # log.debug(" S{} - Sent one port stats request".format(self.switch_id))
+    
 
-def _handle_portstats_request   (self, event):
-    log.debug("PortStatsReceived from {}: {}".format(event.connection.dpid, event.stats))
+
+    def _handle_portstats_received(self, event):
+        # log.debug(" S{} - PortStatsReceived from {}".format(self.switch_id, event.connection.dpid))
+        for stat in flow_stats_to_list(event.stats):
+            current_bytes = stat['tx_bytes']
+            key = (event.dpid, stat['port_no'])
+            if key in self.current_port_throughput:
+                throughput = (current_bytes - self.current_port_throughput[key])/self.time_interval/10**3
+                self.current_port_throughput[key] = throughput
+            else: 
+                self.current_port_throughput[key] = current_bytes
+        # if(self.switch_id == 1):
+            # print("At S{} from {} - {}".format(self.switch_id, event.dpid, self.current_port_throughput))
+        
+    
+
 
 def launch (nCore, nEdge, nHosts):
     """
@@ -173,14 +231,12 @@ def launch (nCore, nEdge, nHosts):
     print("Controller started with the following arguments:")
     print("nCore={}, nEdge={}, nHosts ={}".format(nCore, nEdge, nHosts))
 
+    controller = None
+
     def start_switch (event):
         log.debug("Controlling %s" % (event.connection,))
-        VLAN_Controller(event.connection, int(nCore), int(nEdge), int(nHosts))
+        controller = Adaptive_Controller(event.connection, int(nCore), int(nEdge), int(nHosts))
 
     core.openflow.addListenerByName("ConnectionUp", start_switch)
-    core.openflow.addListenerByName("PortStatsRequest",_handle_portstats_request) 
 
-    # timer set to execute every five seconds
-    stopFlag = Event()
-    timer = Timer(stopFlag, function=_sendPortStatsRequests, interval=0.5)
-    timer.start()
+    
