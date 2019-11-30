@@ -170,11 +170,11 @@ class Tree_Controller(object):
         if dest in self.mac_to_port:
             out_port = self.mac_to_port[dest]
 
-            # Set fields to match received packet
+            # Set fields to match received packet, with regards to source and
+            # destination MAC address.
             msg = of.ofp_flow_mod()
-            msg.match = of.ofp_match.from_packet(packet_in)
-            msg.idle_timeout = 100
-            msg.hard_timeout = 1000
+            msg.match.dl_src = packet.src
+            msg.match.dl_dst = packet.dst
 
             # Send packet out the associated port
             msg.actions.append(of.ofp_action_output(port=out_port))

@@ -161,28 +161,30 @@ class VLAN_Controller(object):
 
         Parameters
         ----------
-        packet : pox.lib.packet
-            Packet that the switch sent up to the controller
+        source : EhtAddr
+            Source of the packet
+        destination : EhtAddr
+            Destination of the packet
         packet_in : ofp_packet_in object
             OpenFlow message
 
         Returns
         -------
-        out_port
+        int
+            Port out of which to send the packet
         """
 
         # Add to dictionnary
         # Send packet out the associated port
-        out_port = self.mac_to_port[destination]
+        out_port = self.mac_to_port[str(destination)]
 
         log.debug("  S{} - Installing flow: {} Port {} -> {} Port {}".format(
-            self.switch_id, source, packet_in.in_port, destination, out_port))
+            self.switch_id, str(source), packet_in.in_port, str(destination), out_port))
 
         # Set fields to match received packet
         msg = of.ofp_flow_mod()
-        msg.match = of.ofp_match.from_packet(packet_in)
-        msg.idle_timeout = 100
-        msg.hard_timeout = 1000
+        msg.match.dl_src = source
+        msg.match.dl_dst = destination
         msg.actions.append(of.ofp_action_output(port=out_port))
         self.connection.send(msg)
 
@@ -226,7 +228,7 @@ class VLAN_Controller(object):
         self.mac_to_port[source] = packet_in.in_port
 
         if dest in self.mac_to_port:
-            out_port = self._install_flow(source, dest, packet_in)
+            out_port = self._install_flow(packet.src, packet.dst, packet_in)
             self.resend_packet(packet_in, out_port)
 
         else:
