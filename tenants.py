@@ -23,7 +23,7 @@ class Tenants(object):
         self.n_vlans = n_vlans
 
     def addToVLAN(self, address, vlan_id):
-        """Adds a mapping to from MAC address to vlan_id.
+        """Adds a mapping from MAC address to vlan_id in the dictionnary.
 
         Parameters
         ----------
