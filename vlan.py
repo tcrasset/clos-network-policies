@@ -67,11 +67,40 @@ class VLAN_Controller(object):
         self.mac_to_port = {}
 
     def is_core(self):
+        """ Determines whether the switch is as core switch.
+
+        The switch IDs in a Clos Network are deterministic, i.e. a core
+        switch will have IDs ranging from [1, nCore + 1]
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        True if the switch is a core switch.
+        False otherwise.
+        """
         if self.switch_id in self.coreSwitchIDs:
             return True
         return False
 
     def sent_from_core(self, port):
+        """ Determines whether or not the packet was sent from a core switch.
+
+        The ports in a Clos Network are deterministic, i.e. an edge
+        switch will receive a packet on port `port` from core switch
+        with ID `port`.
+
+        Parameters
+        ----------
+        port : int
+            The receiving port of a given switch
+
+        Returns
+        -------
+        True if the port is associated with a core switch.
+        False otherwise.
+        """
         return port in self.coreSwitchIDs
 
     def resend_packet(self, packet_in, out_port):
@@ -102,9 +131,17 @@ class VLAN_Controller(object):
         return
 
     def _install_flow(self, source,  destination, packet_in):
-        """Installs a flow in a switch table
+        """Installs a flow in a switch table.
 
-        Returns:
+        Parameters
+        ----------
+        packet : pox.lib.packet
+            Packet that the switch sent up to the controller
+        packet_in : ofp_packet_in object
+            OpenFlow message
+
+        Returns
+        -------
         out_port
         """
 
@@ -132,6 +169,18 @@ class VLAN_Controller(object):
         Sends a packet out to a port depending on specific conditions and
         installs rules in the flow table of the corresponding switch
         via OpenFlow messages.
+        Once a new packet is received, the controller adds a rule to the flow
+        table of the corresponding switch.
+
+        When it comes to transferring unknown packets,
+        there are multiple cases depending on the nature of the switch:
+        1. The switch is a core switch:
+            - Flood the packet out to the edge switch ports
+        2. Switch is an edge switch and gets a packet from a core:
+            - Flood the packet toward host ports
+        3. Switch is an edge switch and gets a packet from a host:
+            - If host has no tenant yet, assign him a tenant
+            - Then, forward the packet towards the tenant (core switch)
 
         Parameters
         ----------
