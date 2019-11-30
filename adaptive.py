@@ -226,7 +226,7 @@ class Adaptive_Controller(object):
             self.mac_to_port[source] = packet_in.in_port
             # Add port to dictionnary and entry to flow table if it is present
             if dest in self.mac_to_port:
-                out_port = self._install_flow(source, dest, packet_in)
+                out_port = self._install_flow(packet.src, packet.dst, packet_in)
                 self.resend_packet(packet_in, out_port)
             else:
                 # Flood the packet out to the edge switch ports
@@ -238,7 +238,7 @@ class Adaptive_Controller(object):
         elif self.sent_from_core(packet_in.in_port):
             # Add port to dictionnary and entry to flow table if it is present
             if dest in self.mac_to_port:
-                out_port = self._install_flow(source, dest, packet_in)
+                out_port = self._install_flow(packet.src, packet.dst, packet_in)
                 self.resend_packet(packet_in, out_port)
 
             else:
@@ -263,7 +263,7 @@ class Adaptive_Controller(object):
                 if(throughput < min_throughput):
                     min_throughput = throughput
                     out_port_to_core = port
-            self._install_flow(source, dest, packet_in,
+            self._install_flow(packet.src, packet.dst, packet_in,
                                specific_out_port=out_port_to_core)
             self.resend_packet(packet_in, out_port=out_port_to_core)
             log.debug("  S{} - Forwarding packet from {} {} out to port {}".format(
@@ -293,21 +293,35 @@ class Adaptive_Controller(object):
     def _install_flow(self, source,  destination, packet_in, specific_out_port=None):
         """Installs a flow in a switch table.
 
-        A flow is discriminated with regards to protocol and source/destination ports.
+        A flow is discriminated with regards to protocol,
+        source/destination ports and MAC_Address
+
+        Parameters
+        ----------
+        source : EhtAddr
+            Source of the packet
+        destination : EhtAddr
+            Destination of the packet
+        packet_in : ofp_packet_in object
+            OpenFlow message
+        specific_out_port: int
+            Port out of which to send the packet.
+            Overrides the port from the dictionnary
 
         Returns:
-        out_port
+        int
+            Port out of which to send the packet
         """
 
         # Add to dictionnary
         # Send packet out the associated port
         if specific_out_port == None:
-            out_port = self.mac_to_port[destination]
+            out_port = self.mac_to_port[str(destination)]
         else:
             out_port = specific_out_port
 
-        log.debug(" S{} - Installing flow: {} Port {} -> {} Port {}".format(self.switch_id, source,
-                                                                            packet_in.in_port, destination, out_port))
+        log.debug(" S{} - Installing flow: {} Port {} -> {} Port {}".format(self.switch_id, str(source),
+                                                                            packet_in.in_port, str(destination), out_port))
 
         # Set fields to match received packet, removing information we don't want to keep
         msg = of.ofp_flow_mod()
