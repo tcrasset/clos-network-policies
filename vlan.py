@@ -27,14 +27,40 @@ log = core.getLogger()
 
 
 class VLAN_Controller(object):
-    """
+    """Controller handling the network like a VLAN
+
     A VLAN_Controller object is created for each switch that connects.
     A Connection object for that switch is passed to the __init__ function.
+    Is supposed to be used with a Clos Topology.
+
+    In this controller, the switch is designed to behave like in a VLAN.
+    That is, each host will be associated to a given VLAN id, i.e. a core switch,
+    and packets will be routed to the corresponding core switch of the destination.
+
+    Example: 
+    If h1 has vlan_id = 1 and h2 has vlan_id = 2, a packet which destination
+    is h1 will be sent through core switch with switch_id = 1 and a packet which 
+    destination is h2 will be sent through core switch with switch_id = 2.
+
+    Arguments
+    ----------
+    switch_id : int
+        ID used to uniquely identify the switch in a topology
+    coreSwitchIDs : list of int
+        IDs of core switches in the topology
+    edgeSwitchIDs : list of int
+        IDs of edge switches in the topology
+    tenants: Tenants object
+        Object associating host to a tenant i.e. a core switch
+    vlan_id: int
+        ID determining to which VLAN a host belongs to. There are
+        `nCore` VLANs and `vlan_id` is initialized to 1.
+    mac_to_port : dict of str: int
+        Dictionnary mapping MAC addresses of type pox.lib.addresses.EthAddr to ports
     """
 
     def __init__(self, connection, nCore, nEdge, nHosts):
-        """
-        Initializes the VLAN_Controller object.
+        """Initializes the VLAN_Controller object.
 
         Parameters
         ----------
@@ -50,11 +76,11 @@ class VLAN_Controller(object):
         """
 
         self.connection = connection
-        self.switch_id = connection.dpid
         self.nCore = nCore
         self.nEdge = nEdge
         self.nHosts = nHosts
 
+        self.switch_id = connection.dpid
         self.coreSwitchIDs = list(range(1, self.nCore+1))
         self.edgeSwitchIDs = list(
             range(self.nCore + 1, self.nCore + 1 + self.nEdge))
@@ -64,10 +90,11 @@ class VLAN_Controller(object):
 
         # This binds our PacketIn event listener
         connection.addListeners(self)
+
         self.mac_to_port = {}
 
     def is_core(self):
-        """ Determines whether the switch is as core switch.
+        """Determines whether the switch is a core switch.
 
         The switch IDs in a Clos Network are deterministic, i.e. a core
         switch will have IDs ranging from [1, nCore + 1]
@@ -85,7 +112,7 @@ class VLAN_Controller(object):
         return False
 
     def sent_from_core(self, port):
-        """ Determines whether or not the packet was sent from a core switch.
+        """Determines whether or not the packet was sent from a core switch.
 
         The ports in a Clos Network are deterministic, i.e. an edge
         switch will receive a packet on port `port` from core switch
@@ -104,8 +131,7 @@ class VLAN_Controller(object):
         return port in self.coreSwitchIDs
 
     def resend_packet(self, packet_in, out_port):
-        """
-        Instructs the switch to resend a packet that it had sent to us.
+        """Instructs the switch to resend a packet that it had sent to us.
 
         Parameters
         ----------
@@ -163,8 +189,7 @@ class VLAN_Controller(object):
         return out_port
 
     def act_like_switch(self, packet, packet_in):
-        """
-        Implement switch like behavior.
+        """Implement switch like behavior.
 
         Sends a packet out to a port depending on specific conditions and
         installs rules in the flow table of the corresponding switch
@@ -236,8 +261,7 @@ class VLAN_Controller(object):
         return
 
     def _handle_PacketIn(self, event):
-        """
-        Handles packet in messages from the switch.
+        """Handles packet in messages from the switch.
 
         Parameters
         ----------
@@ -260,8 +284,7 @@ class VLAN_Controller(object):
 
 
 def launch(nCore, nEdge, nHosts):
-    """
-    Starts the component when calling from the command line.
+    """Starts the component when calling from the command line.
 
     Parameters
     ----------

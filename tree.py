@@ -25,7 +25,8 @@ log = core.getLogger()
 
 
 class Tree_Controller(object):
-    """
+    """Controller handling the network like a Spanning Tree
+
     A Tree_Controller object is created for each switch that connects.
 
     A Connection object for that switch is passed to the __init__ function.
@@ -50,8 +51,7 @@ class Tree_Controller(object):
     """
 
     def __init__(self, connection, nCore, nEdge, nHosts):
-        """
-        Initializes the Tree_Controller object.
+        """Initializes the Tree_Controller object.
 
         Parameters
         ----------
@@ -70,8 +70,8 @@ class Tree_Controller(object):
         self.nCore = nCore
         self.nEdge = nEdge
         self.nHosts = nHosts
-        self.switch_id = connection.dpid
 
+        self.switch_id = connection.dpid
         self.coreSwitchIDs = list(range(1, self.nCore+1))
         self.edgeSwitchIDs = list(
             range(self.nCore + 1, self.nCore + 1 + self.nEdge))
@@ -86,8 +86,7 @@ class Tree_Controller(object):
         self.mac_to_port = {}
 
     def _activate_core(self, coreSwitchPort):
-        """
-        Instructs the edge switch to block every port to a core switch except
+        """Instructs the edge switch to block every port to a core switch except
         the port `coreSwitchPort`.
 
         Port number between edge and core switches are in [1, nCore]
@@ -118,8 +117,7 @@ class Tree_Controller(object):
         return
 
     def resend_packet(self, packet_in, out_port):
-        """
-        Instructs the switch to resend a packet that it had sent to us.
+        """Instructs the switch to resend a packet that it had sent to us.
 
         Parameters
         ----------
@@ -145,8 +143,7 @@ class Tree_Controller(object):
         return
 
     def act_like_switch(self, packet, packet_in):
-        """
-        Implement switch like behavior.
+        """Implement switch like behavior.
 
         Sends a packet out to a port depending on specific conditions and
         installs rules in the flow table of the corresponding switch
@@ -195,8 +192,7 @@ class Tree_Controller(object):
         return
 
     def _handle_PacketIn(self, event):
-        """
-        Handles packet in messages from the switch.
+        """Handles packet in messages from the switch.
 
         Parameters
         ----------
@@ -219,8 +215,7 @@ class Tree_Controller(object):
 
 
 def launch(nCore, nEdge, nHosts):
-    """
-    Starts the component when calling from the command line.
+    """Starts the component when calling from the command line.
 
     Parameters
     ----------
