@@ -14,3 +14,12 @@ An explanation of the code and the results can be found in [Report.pdf](Report.p
 ## Prerequisites
 
 You'll need to have `mininet` and `pox` installed. The best option for you would be to setup a virtual machine.
+
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details
+
+## Acknowledgments
+
+Thanks to Professors G. Leduc, B. Donnet and L. Mathy for their course Netowrk Infrastructures and C. Soldani, the assistant, who created this project.
